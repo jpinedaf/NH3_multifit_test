@@ -16,25 +16,29 @@ do_2comp=False
 
 if download_data:
     from astropy.utils.data import download_file
-    import os
+    import os, shutil
+    if os.path.exists('data') == False:
+        os.mkdir('data')
     # get rms file
-    tmp_rms=download_file('https://dataverse.harvard.edu/api/access/datafile/3008213')
-    os.rename(tmp_rms, file_rms)
+    if os.path.isfile(file_rms) == False:
+        tmp_rms=download_file('https://dataverse.harvard.edu/api/access/datafile/3008213')
+        shutil.move(tmp_rms, file_rms)
     # get cube
-    tmp_cube=download_file('https://dataverse.harvard.edu/api/access/datafile/2902348')
-    os.rename(tmp_cube, file_cube)
+    if os.path.isfile(file_cube) == False:
+        tmp_cube=download_file('https://dataverse.harvard.edu/api/access/datafile/2902348')
+        shutil.move(tmp_cube, file_cube)
     # create Peak temperature file
-    hd=fits.getheader(file_rms)
-    hd['BUNIT']='K'
-    cube=fits.getdata(file_cube)
-    tp_data=cube.max(axis=0)
-    fits.writeto(file_tp, tp_data, hd)
+    if os.path.isfile(file_tp) == False:
+        hd=fits.getheader(file_rms)
+        hd['BUNIT']='K'
+        cube=fits.getdata(file_cube)
+        tp_data=cube.max(axis=0)
+        fits.writeto(file_tp, tp_data, hd)
 
 tp= fits.getdata(file_tp)
 rms= fits.getdata(file_rms)
 snr_map=tp/rms
 snr_cut=4
-
 
 if do_1comp:
     sc = SubCube(file_cube)
