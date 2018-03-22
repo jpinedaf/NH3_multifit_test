@@ -2,14 +2,16 @@ import numpy as np
 import matplotlib.pylab as plt
 
 import pyspeckit
+from pyspeckit.spectrum.models.ammonia import cold_ammonia_model
 from multicube.subcube import SubCube
 from astropy.io import fits
+from extras import verify_parlims
 import warnings
 
 file_cube='./data/NGC1333_NH3_11_base_DR1.fits'
 file_rms='./data/NGC1333_NH3_11_base_DR1_rms.fits'
 file_tp='./data/NGC1333_NH3_11_base_DR1_Tpeak.fits'
-file_mc_guess='./fits/NGC1333_NH3_MC_guess.fits'
+file_mc_guess='./fits/NGC1333_NH3_MC_guess_npeaks2.fits'
 
 download_data=False
 do_1comp=True
@@ -46,17 +48,16 @@ multicore=40
 if do_1comp:
     sc = SubCube(file_cube)
     sc.plot_spectrum(103,133)
-    line_names = ['oneone', 'twotwo']
-    line_names = ['oneone']
-    fittype_fmt = 'cold_ammonia_x{}'
-    from pyspeckit.spectrum.models.ammonia import cold_ammonia_model
     npars = 6 # for an ammonia model
+    npeaks = 1
+    #line_names = ['oneone', 'twotwo']
+    line_names = ['oneone']
+    fittype = 'cold_ammonia_x{}'.format(npeaks)
     fitmodel = cold_ammonia_model
-    npeaks=1
-    
-    sc.specfit.Registry.add_fitter(fittype_fmt.format(npeaks), npars=npars,
-                                    function=fitmodel(line_names=line_names))
-    sc.update_model(fittype_fmt.format(npeaks))
+
+    sc.specfit.Registry.add_fitter(fittype, npars=npars,
+                                   function=fitmodel(line_names=line_names))
+    sc.update_model(fittype)
     sc.specfit.fitter.npeaks = npeaks
     # parameters are Tk, Tex, log(N(NH3)), sigma_v, v_lsr
     minpars = [10., 3.0, 13.5, 0.05, 6.0, 0.5]
@@ -64,37 +65,43 @@ if do_1comp:
     finesse = [1, 6, 6, 10, 10, 1]
     sc.make_guess_grid(minpars, maxpars, finesse)
     sc.generate_model(multicore=multicore)
-    #sc.get_snr_map()
     sc.snr_map=snr_map
     sc.best_guess(sn_cut=snr_cut)
     #sc.plot_spectrum(103,133)
     #sc.plotter.axis.plot(sc.xarr.value, sc.model_grid[sc._best_map[133,103]])
     #plt.imshow(sc.best_guesses[4,:,:], origin='lowest', cmap='RdYlBu_r')
     #plt.show()
-    sc.fiteach(fittype   = sc.fittype,
-        guesses   = sc.best_guesses, 
+
+    # fix Tkin and f2o for both l.o.s. components
+    sc.fiteach_args['fixed'][0]=True
+    sc.fiteach_args['fixed'][5]=True
+
+    # make sure the parameter limits are all within the bounds
+    verify_parlims(sc.best_guesses, sc.fiteach_args,
+                   npeaks=npeaks, npars=npars)
+
+    sc.fiteach(fittype = fittype,
+        guesses   = sc.best_guesses,
         multicore = multicore,
         errmap    = rms,
         verbose   = 0,
         **sc.fiteach_args)
 
 if do_2comp:
-    # parameters are Tk, Tex, log(N(NH3)), sigma_v, v_lsr
-    sc2= SubCube(file_cube)
+    sc2 = SubCube(file_cube)
     npeaks = 2 # number of l.o.s. components
-    line_names = ['oneone', 'twotwo']
-    line_names = ['oneone']
-    fittype_fmt = 'cold_ammonia_x{}'
-    from pyspeckit.spectrum.models.ammonia import cold_ammonia_model
     npars = 6 # for an ammonia model
+    #line_names = ['oneone', 'twotwo']
+    line_names = ['oneone']
+    fittype = 'cold_ammonia_x{}'.format(npeaks)
     fitmodel = cold_ammonia_model
 
-    
-    sc2.specfit.Registry.add_fitter(fittype_fmt.format(npeaks), npars=npars,
+    sc2.specfit.Registry.add_fitter(fittype, npars=npars,
                                     function=fitmodel(line_names=line_names))
-    sc2.update_model(fittype_fmt.format(npeaks))
+    sc2.update_model(fittype)
     sc2.specfit.fitter.npeaks = npeaks
-    #
+
+    # parameters are Tk, Tex, log(N(NH3)), sigma_v, v_lsr
     minpars2= [10., 3.0, 13.5, 0.05, 6.0, 0.5]+[10., 3.0, 13.5, 0.05, 6.0, 0.5]
     maxpars2= [10., 9.0, 15.0, 1.50, 9.5, 0.5]+[10., 9.0, 15.0, 1.50, 9.5, 0.5]
     finesse2= [1, 1, 4, 6, 8, 1] + [1, 1, 4, 6, 8, 1]
@@ -102,37 +109,48 @@ if do_2comp:
     sc2.generate_model(multicore=multicore)
     sc2.snr_map=snr_map
     #sc2.get_snr_map()
-    
+
     import os
     if os.path.exists('fits') == False:
         os.mkdir('fits')
-    #
+
     # Do we search for the best guess or load from file?
+    # (delete `file_mc_guess` to regenerate the models and guesses!)
     if os.path.isfile(file_mc_guess):
-        sc2.best_guesses= fits.getdata( file_mc_guess)
+        sc2.best_guesses = fits.getdata(file_mc_guess)
     else:
         sc2.best_guess(sn_cut=snr_cut)
-        fits.writeto( file_mc_guess, sc2.best_guesses, hd)
+        fits.writeto(file_mc_guess, sc2.best_guesses, hd)
 
-    #
-    i=106 # 130
-    j=159 # 144
+    # for the highest S/N pixel on the map
+    j, i = np.unravel_index(np.nanargmax(sc2.snr_map), sc2.snr_map.shape)
+    #i=106 # 130
+    #j=159 # 144
     sc2.plot_spectrum(i,j)
-    sc2.plotter.axis.plot(sc2.xarr.value, sc2.model_grid[sc2._best_map[j,i]])
+    ij_model = sc2.specfit.get_full_model(pars=sc2.best_guesses[:, j, i])
+    sc2.plotter.axis.plot(sc2.xarr.value, ij_model)
     plt.show()
-    #
-    from multicube.astro_toolbox import get_ncores
 
+    # fix Tkin and f2o for both l.o.s. components
     sc2.fiteach_args['fixed'][0]=True
     sc2.fiteach_args['fixed'][5]=True
     sc2.fiteach_args['fixed'][6]=True
     sc2.fiteach_args['fixed'][11]=True
 
+    # make sure the parameter limits are all within the bounds
+    verify_parlims(sc2.best_guesses, sc2.fiteach_args,
+                   npeaks=npeaks, npars=npars)
+
     sc2.fiteach(fittype   = sc2.fittype,
-        guesses   = sc2.best_guesses, 
+        guesses   = sc2.best_guesses,
         multicore = multicore,
         errmap    = rms,
         verbose   = 0,
         **sc2.fiteach_args)
-    sc2.write_fit('fit_cube_filename.fits',overwrite=True)
 
+    # vsokolov: not sure why this is needed, for some reason parinfo does not
+    # have a correct npeaks after fiteach with npeaks > 1...
+    parinfo, _ = sc2.specfit.fitter._make_parinfo(npeaks=npeaks)
+    sc2.specfit.parinfo = sc2.specfit.fitter.parinfo = parinfo
+
+    sc2.write_fit('fit_cube_filename.fits',overwrite=True)
