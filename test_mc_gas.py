@@ -9,10 +9,11 @@ import warnings
 file_cube='./data/NGC1333_NH3_11_base_DR1.fits'
 file_rms='./data/NGC1333_NH3_11_base_DR1_rms.fits'
 file_tp='./data/NGC1333_NH3_11_base_DR1_Tpeak.fits'
+file_mc_guess='./fits/NGC1333_NH3_MC_guess.fits'
 
-download_data=True
+download_data=False
 do_1comp=False
-do_2comp=False
+do_2comp=True
 
 if download_data:
     from astropy.utils.data import download_file
@@ -35,6 +36,7 @@ if download_data:
         tp_data=cube.max(axis=0)
         fits.writeto(file_tp, tp_data, hd)
 
+hd=fits.getheader(file_rms)
 tp= fits.getdata(file_tp)
 rms= fits.getdata(file_rms)
 snr_map=tp/rms
@@ -58,7 +60,7 @@ if do_1comp:
     #plt.imshow(sc.best_guesses[4,:,:], origin='lowest', cmap='RdYlBu_r')
     #plt.show()
 
-
+multicore=40
 if do_2comp:
     # parameters are Tk, Tex, log(N(NH3)), sigma_v, v_lsr
     sc2= SubCube(file_cube)
@@ -69,6 +71,8 @@ if do_2comp:
     from pyspeckit.spectrum.models.ammonia import cold_ammonia_model
     npars = 6 # for an ammonia model
     fitmodel = cold_ammonia_model
+
+    
     sc2.specfit.Registry.add_fitter(fittype_fmt.format(npeaks), npars=npars,
                                     function=fitmodel(line_names=line_names))
     sc2.update_model(fittype_fmt.format(npeaks))
@@ -76,13 +80,23 @@ if do_2comp:
     #
     minpars2= [10., 3.0, 13.5, 0.05, 6.0, 0.5]+[10., 3.0, 13.5, 0.05, 6.0, 0.5]
     maxpars2= [10., 9.0, 15.0, 1.50, 9.5, 0.5]+[10., 9.0, 15.0, 1.50, 9.5, 0.5]
-    finesse2= [1, 1, 3, 6, 8, 1] + [1, 1, 3, 6, 8, 1]
+    finesse2= [1, 1, 4, 8,10, 1] + [1, 1, 4, 8,10, 1]
     sc2.make_guess_grid(minpars2, maxpars2, finesse2)
-    
-    sc2.generate_model()
+    sc2.generate_model(multicore=multicore)
     sc2.snr_map=snr_map
     #sc2.get_snr_map()
     sc2.best_guess(sn_cut=snr_cut)
+    
+    import os
+    if os.path.exists('fits') == False:
+        os.mkdir('fits')
+    #
+    # Do we search for the best guess or load from file?
+    if os.path.isfile(file_mc_guess):
+        sc2._best_map = fits.getdata( file_mc_guess)
+    else:
+        fits.writeto( file_mc_guess, sc2._best_map, hd)
+
     #
     i=106 # 130
     j=159 # 144
@@ -99,7 +113,7 @@ if do_2comp:
 
     sc2.fiteach(fittype   = sc2.fittype,
         guesses   = sc2.best_guesses, 
-        multicore = 30,
+        multicore = multicore,
         errmap    = rms,
         verbose   = 0,
         **sc2.fiteach_args)
