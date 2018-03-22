@@ -12,8 +12,8 @@ file_tp='./data/NGC1333_NH3_11_base_DR1_Tpeak.fits'
 file_mc_guess='./fits/NGC1333_NH3_MC_guess.fits'
 
 download_data=False
-do_1comp=False
-do_2comp=True
+do_1comp=True
+do_2comp=False
 
 if download_data:
     from astropy.utils.data import download_file
@@ -40,18 +40,30 @@ hd=fits.getheader(file_rms)
 tp= fits.getdata(file_tp)
 rms= fits.getdata(file_rms)
 snr_map=tp/rms
-snr_cut=4
+snr_cut=38
+multicore=40
 
 if do_1comp:
     sc = SubCube(file_cube)
     sc.plot_spectrum(103,133)
-    sc.update_model('cold_ammonia')
+    line_names = ['oneone', 'twotwo']
+    line_names = ['oneone']
+    fittype_fmt = 'cold_ammonia_x{}'
+    from pyspeckit.spectrum.models.ammonia import cold_ammonia_model
+    npars = 6 # for an ammonia model
+    fitmodel = cold_ammonia_model
+    npeaks=1
+    
+    sc.specfit.Registry.add_fitter(fittype_fmt.format(npeaks), npars=npars,
+                                    function=fitmodel(line_names=line_names))
+    sc.update_model(fittype_fmt.format(npeaks))
+    sc.specfit.fitter.npeaks = npeaks
     # parameters are Tk, Tex, log(N(NH3)), sigma_v, v_lsr
     minpars = [10., 3.0, 13.5, 0.05, 6.0, 0.5]
     maxpars = [10., 9.0, 15.0, 1.50, 9.5, 0.5]
     finesse = [1, 6, 6, 10, 10, 1]
     sc.make_guess_grid(minpars, maxpars, finesse)
-    sc.generate_model()
+    sc.generate_model(multicore=multicore)
     #sc.get_snr_map()
     sc.snr_map=snr_map
     sc.best_guess(sn_cut=snr_cut)
@@ -59,8 +71,13 @@ if do_1comp:
     #sc.plotter.axis.plot(sc.xarr.value, sc.model_grid[sc._best_map[133,103]])
     #plt.imshow(sc.best_guesses[4,:,:], origin='lowest', cmap='RdYlBu_r')
     #plt.show()
+    sc.fiteach(fittype   = sc.fittype,
+        guesses   = sc.best_guesses, 
+        multicore = multicore,
+        errmap    = rms,
+        verbose   = 0,
+        **sc.fiteach_args)
 
-multicore=40
 if do_2comp:
     # parameters are Tk, Tex, log(N(NH3)), sigma_v, v_lsr
     sc2= SubCube(file_cube)
@@ -80,12 +97,11 @@ if do_2comp:
     #
     minpars2= [10., 3.0, 13.5, 0.05, 6.0, 0.5]+[10., 3.0, 13.5, 0.05, 6.0, 0.5]
     maxpars2= [10., 9.0, 15.0, 1.50, 9.5, 0.5]+[10., 9.0, 15.0, 1.50, 9.5, 0.5]
-    finesse2= [1, 1, 4, 8,10, 1] + [1, 1, 4, 8,10, 1]
+    finesse2= [1, 1, 4, 6, 8, 1] + [1, 1, 4, 6, 8, 1]
     sc2.make_guess_grid(minpars2, maxpars2, finesse2)
     sc2.generate_model(multicore=multicore)
     sc2.snr_map=snr_map
     #sc2.get_snr_map()
-    sc2.best_guess(sn_cut=snr_cut)
     
     import os
     if os.path.exists('fits') == False:
@@ -93,9 +109,10 @@ if do_2comp:
     #
     # Do we search for the best guess or load from file?
     if os.path.isfile(file_mc_guess):
-        sc2._best_map = fits.getdata( file_mc_guess)
+        sc2.best_guesses= fits.getdata( file_mc_guess)
     else:
-        fits.writeto( file_mc_guess, sc2._best_map, hd)
+        sc2.best_guess(sn_cut=snr_cut)
+        fits.writeto( file_mc_guess, sc2.best_guesses, hd)
 
     #
     i=106 # 130
