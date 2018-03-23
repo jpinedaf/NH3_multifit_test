@@ -11,11 +11,15 @@ import warnings
 file_cube='./data/NGC1333_NH3_11_base_DR1.fits'
 file_rms='./data/NGC1333_NH3_11_base_DR1_rms.fits'
 file_tp='./data/NGC1333_NH3_11_base_DR1_Tpeak.fits'
-file_mc_guess='./fits/NGC1333_NH3_MC_guess_npeaks2.fits'
+file_mc_guess1c='./fits/NGC1333_NH3_MC_guess_npeaks1.fits'
+file_mc_guess2c='./fits/NGC1333_NH3_MC_guess_npeaks2.fits'
+file_best_fit_1c='./fits/NGC1333_NH3_MC_best_npeaks1.fits'
+file_best_fit_2c='./fits/NGC1333_NH3_MC_best_npeaks2.fits'
 
 download_data=False
-do_1comp=True
+do_1comp=False
 do_2comp=False
+do_inspect=True
 
 if download_data:
     from astropy.utils.data import download_file
@@ -42,7 +46,7 @@ hd=fits.getheader(file_rms)
 tp= fits.getdata(file_tp)
 rms= fits.getdata(file_rms)
 snr_map=tp/rms
-snr_cut=38
+snr_cut=15
 multicore=40
 
 if do_1comp:
@@ -66,7 +70,20 @@ if do_1comp:
     sc.make_guess_grid(minpars, maxpars, finesse)
     sc.generate_model(multicore=multicore)
     sc.snr_map=snr_map
-    sc.best_guess(sn_cut=snr_cut)
+    #sc.best_guess(sn_cut=snr_cut)
+
+    import os
+    if os.path.exists('fits') == False:
+        os.mkdir('fits')
+
+    # Do we search for the best guess or load from file?
+    # (delete `file_mc_guess` to regenerate the models and guesses!)
+    if os.path.isfile(file_mc_guess1c):
+        sc.best_guesses = fits.getdata(file_mc_guess1c)
+    else:
+        sc.best_guess(sn_cut=snr_cut)
+        fits.writeto(file_mc_guess1c, sc.best_guesses, hd)
+
     #sc.plot_spectrum(103,133)
     #sc.plotter.axis.plot(sc.xarr.value, sc.model_grid[sc._best_map[133,103]])
     #plt.imshow(sc.best_guesses[4,:,:], origin='lowest', cmap='RdYlBu_r')
@@ -86,6 +103,7 @@ if do_1comp:
         errmap    = rms,
         verbose   = 0,
         **sc.fiteach_args)
+    sc.write_fit(file_best_fit_1c,overwrite=True)
 
 if do_2comp:
     sc2 = SubCube(file_cube)
@@ -116,11 +134,11 @@ if do_2comp:
 
     # Do we search for the best guess or load from file?
     # (delete `file_mc_guess` to regenerate the models and guesses!)
-    if os.path.isfile(file_mc_guess):
-        sc2.best_guesses = fits.getdata(file_mc_guess)
+    if os.path.isfile(file_mc_guess2c):
+        sc2.best_guesses = fits.getdata(file_mc_guess2c)
     else:
         sc2.best_guess(sn_cut=snr_cut)
-        fits.writeto(file_mc_guess, sc2.best_guesses, hd)
+        fits.writeto(file_mc_guess2c, sc2.best_guesses, hd)
 
     # for the highest S/N pixel on the map
     j, i = np.unravel_index(np.nanargmax(sc2.snr_map), sc2.snr_map.shape)
@@ -152,5 +170,45 @@ if do_2comp:
     # have a correct npeaks after fiteach with npeaks > 1...
     parinfo, _ = sc2.specfit.fitter._make_parinfo(npeaks=npeaks)
     sc2.specfit.parinfo = sc2.specfit.fitter.parinfo = parinfo
+    sc2.write_fit(file_best_fit_2c,overwrite=True)
 
-    sc2.write_fit('fit_cube_filename.fits',overwrite=True)
+if do_inspect:
+    i=109
+    j=141
+    
+    # Load cube 1
+    sc = SubCube(file_cube)
+    npars = 6 # for an ammonia model
+    npeaks = 1
+    line_names = ['oneone']
+    fittype = 'cold_ammonia_x{}'.format(npeaks)
+    fitmodel = cold_ammonia_model
+    sc.specfit.Registry.add_fitter(fittype, npars=npars,
+                                   function=fitmodel(line_names=line_names))
+    sc.update_model(fittype)
+    sc.specfit.fitter.npeaks = npeaks
+    # Load Data 2
+    sc2 = SubCube(file_cube)
+    npeaks = 2 # number of l.o.s. components
+    fittype = 'cold_ammonia_x{}'.format(npeaks)
+    fitmodel = cold_ammonia_model
+    sc2.specfit.Registry.add_fitter(fittype, npars=npars,
+                                    function=fitmodel(line_names=line_names))
+    sc2.update_model(fittype)
+    sc2.specfit.fitter.npeaks = npeaks
+    #
+    # plotting
+    #
+    best_fit1c= fits.getdata(file_best_fit_1c)
+    best_fit2c= fits.getdata(file_best_fit_2c)
+    sc2.plot_spectrum(i,j)  
+    ij_model1 = sc.specfit.get_full_model(pars=best_fit1c[0:6, j, i])   
+    ij_model2 = sc.specfit.get_full_model(pars=best_fit2c[0:6, j, i])   
+    ij_model3 = sc.specfit.get_full_model(pars=best_fit2c[6:12, j, i])   
+    ij_model4 = sc2.specfit.get_full_model(pars=best_fit2c[0:12, j, i])   
+    sc2.plotter.axis.plot(sc2.xarr.value, ij_model1)
+    sc2.plotter.axis.plot(sc2.xarr.value, ij_model2)
+    sc2.plotter.axis.plot(sc2.xarr.value, ij_model3)
+    sc2.plotter.axis.plot(sc2.xarr.value, ij_model4)
+
+
