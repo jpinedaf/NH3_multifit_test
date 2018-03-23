@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pylab as plt
+import matplotlib.pylab as pl
 
 import pyspeckit
 from pyspeckit.spectrum.models.ammonia import cold_ammonia_model
@@ -175,7 +176,7 @@ if do_2comp:
 if do_inspect:
     i=109
     j=141
-    
+
     # Load cube 1
     sc = SubCube(file_cube)
     npars = 6 # for an ammonia model
@@ -201,14 +202,17 @@ if do_inspect:
     #
     best_fit1c= fits.getdata(file_best_fit_1c)
     best_fit2c= fits.getdata(file_best_fit_2c)
-    sc2.plot_spectrum(i,j)  
-    ij_model1 = sc.specfit.get_full_model(pars=best_fit1c[0:6, j, i])   
-    ij_model2 = sc.specfit.get_full_model(pars=best_fit2c[0:6, j, i])   
-    ij_model3 = sc.specfit.get_full_model(pars=best_fit2c[6:12, j, i])   
-    ij_model4 = sc2.specfit.get_full_model(pars=best_fit2c[0:12, j, i])   
-    sc2.plotter.axis.plot(sc2.xarr.value, ij_model1)
-    sc2.plotter.axis.plot(sc2.xarr.value, ij_model2)
-    sc2.plotter.axis.plot(sc2.xarr.value, ij_model3)
-    sc2.plotter.axis.plot(sc2.xarr.value, ij_model4)
+    sc2.plot_spectrum(i,j, axis=pl.subplot(2,1,1))
+    ij_model1 = sc.specfit.get_full_model(pars=best_fit1c[0:6, j, i])
+    ij_model2 = sc.specfit.get_full_model(pars=best_fit2c[0:6, j, i])
+    ij_model3 = sc.specfit.get_full_model(pars=best_fit2c[6:12, j, i])
+    ij_model4 = sc2.specfit.get_full_model(pars=best_fit2c[0:12, j, i])
+    sc2.plotter.axis.plot(sc2.xarr.value, ij_model1, color='r')
+    sc2.plotter.axis.plot(sc2.xarr.value, ij_model2, color='g')
+    sc2.plotter.axis.plot(sc2.xarr.value, ij_model3, color='b')
+    sc2.plotter.axis.plot(sc2.xarr.value, ij_model4, color='orange')
 
-
+    pl.subplot(2,1,2).plot(sc2.xarr.value, sc2.data-ij_model1, color='r')
+    #pl.subplot(2,1,2).plot(sc2.xarr.value, sc2.data-ij_model2, color='g')
+    #pl.subplot(2,1,2).plot(sc2.xarr.value, sc2.data-ij_model3, color='b')
+    pl.subplot(2,1,2).plot(sc2.xarr.value, sc2.data-ij_model4, color='orange')
